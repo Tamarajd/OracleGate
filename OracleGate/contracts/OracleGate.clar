@@ -207,6 +207,42 @@
     )
 )
 
+;; --- ML Evaluation Request System ---
+
+;; @desc Allows a user to request a fresh ML evaluation by paying a fee.
+(define-public (request-ml-evaluation)
+    (let (
+        (existing-request (map-get? evaluation-requests tx-sender))
+        (current-fee (var-get evaluation-fee))
+    )
+        (try! (assert-not-paused))
+        (try! (assert-not-blacklisted tx-sender))
+        
+        ;; Check if there is already a pending request for this user to prevent spam
+        (asserts! 
+            (or 
+                (is-none existing-request)
+                (not (get is-pending (unwrap-panic existing-request)))
+            ) 
+            err-request-pending
+        )
+        
+        ;; Transfer the evaluation fee from the user to the designated fee recipient
+        (try! (stx-transfer? current-fee tx-sender (var-get evaluation-fee-recipient)))
+        
+        ;; Record the new evaluation request as pending
+        (map-set evaluation-requests tx-sender {
+            requested-at: block-height,
+            is-pending: true
+        })
+        
+        ;; Emit a log for the off-chain ML Oracle
+        (print { event: "evaluation-requested", user: tx-sender })
+        
+        (ok true)
+    )
+)
+
 ;; @desc Allows the authorized ML oracle to fulfill a user's evaluation request.
 (define-public (fulfill-ml-evaluation (user principal) (score uint))
     (let (
@@ -269,5 +305,4 @@
 (define-read-only (get-nft-owner (token-id uint))
     (ok (nft-get-owner? gated-ml-token token-id))
 )
-
 
